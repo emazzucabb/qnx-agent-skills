@@ -12,7 +12,7 @@ If you already have your own QNX 8.0 disk image, the `run.sh` in this repo is a 
 ssh <user>@<host>
 ```
 
-- User: `<user>` (depends on the image; QSTI images use `qnxuser`)
+- User: `<user>` (depends on the image; QSTI images use `qnx`)
 - Host: `<target-host>` (the device or VM IP; use `mkqnximage --getip` for QSTI)
 - Port: standard SSH port `22` by default (the QSTI case, connect straight to the target IP). If your setup forwards SSH to a non-standard host port instead (for example a hand-rolled QEMU launcher forwarding host `2227` to guest `22`), add `-p <port>` to every ssh and sshpass command below.
 - Authentication: fill in your method below (password or key)
@@ -40,28 +40,6 @@ For sudo on the target, pipe the password:
 ```bash
 printf '%s\n' <password> | sudo -S <command>
 ```
-
-## Auto mode and the permission classifier (Claude Code)
-
-The on-target workflow authenticates over SSH and elevates with `sudo` using a password (the password pipe above, and the `/tmp/sudo-apk` wrapper if you use it). Claude Code's **auto mode** runs a separate classifier over each proposed action, and it blocks this as unsafe, because it transfers a password and writes it to a plaintext file on the target. The classifier exists only in auto mode.
-
-To run the porting workflow:
-
-1. On the target, grant passwordless apk so the password pipe is not needed:
-
-   ```bash
-   sudo visudo -f /etc/sudoers.d/qnxuser
-   # add:
-   qnxuser ALL=(ALL) NOPASSWD: /system/bin/apk
-   ```
-
-2. Use manual mode (the classifier runs only in auto mode).
-
-3. Reduce prompting by merging `settings.template.json` into `~/.claude/settings.json`. The `Bash(sshpass:*)` allow-rule covers the whole on-target workflow. To skip prompts entirely, run `claude --dangerously-skip-permissions`, accepting that you are then the only safety check.
-
-The passwordless-apk rule relaxes security on the target (apk runs as root without a password). That is fine for a throwaway local dev image; for anything shared or networked, prefer key-based SSH and tighter secret handling.
-
-Root cause: the classifier objects to plaintext password handling. Removing it helps in any mode: use key-based SSH instead of a password, and the NOPASSWD rule instead of the password pipe. With no password transferred or stored, the workflow is both safer and less likely to trip the classifier.
 
 ## On-target paths
 
