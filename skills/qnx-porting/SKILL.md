@@ -15,7 +15,7 @@ These hold regardless of which sub-skill you are in:
 
 2. Never create a patch from an untested change. Test in the unpacked source tree with native build tools first. The patch is written only after the change is confirmed working. (Full workflow: aports-patch-creation.)
 
-3. The human runs all git operations. The agent edits and builds; it never commits and never pushes.
+3. Never push, and never make the commits a human owns. Git is a tool you need, not a forbidden one: run it freely for inspection (`git status`, `log`, `diff`, `show`), and use it inside `src/` to generate patches — that is the required patch workflow (see aports-patch-creation). Never `git push`; never commit to the aports tree or any repo a human reviews; never run history-altering or destructive commands (`reset --hard`, `checkout --`, `rebase`, `clean`). Separately, do not run `git update-index` on the user's behalf: skip-worktree is their choice about their own checkout, not a build step. Prepare the change and hand off; the human commits, branches, and pushes.
 
 4. Build native aports packages on the QNX target with abuild. Do not cross-compile the package from a Linux host using qcc/q++ and toolchain files. If a task or an old document assumes a host-side cross-compile (qcc/q++, toolchain-files, build-files), that is the legacy cross-compile path and does not apply to native aports work. (The QNX SDP may still be used on the host to launch a QEMU target; that is fine and is separate from building the package.)
 
@@ -57,4 +57,4 @@ Each non-trivial port should carry its own folder under `projects/apks/<pkgname>
 
 ## Git and PR conventions
 
-The human handles all git operations (rule 3). Use standard fork-based PRs: one branch per change on your personal fork, dependency packages submitted before consumer packages. Commit subjects follow the pattern `<repo>/<pkgname>: new aport` for new packages and `<repo>/<pkgname>: enable/fix build on QNX` for existing ones.
+The human owns the commit and PR record (rule 3); the agent may inspect it but does not write it. Use standard fork-based PRs: one branch per change on your personal fork, dependency packages submitted before consumer packages. Commit subjects follow the pattern `<repo>/<pkgname>: new aport` for new packages and `<repo>/<pkgname>: enable/fix build on QNX` for existing ones.

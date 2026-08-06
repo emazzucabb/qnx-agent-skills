@@ -6,7 +6,7 @@ Start here for <pkgname> porting work. This index is the entry point; read the r
 
 1. `<pkgname>-README.md` - current port status, source comparison, dependency plan, and the changelog
 2. `../<consumer-or-dependency>/<that>-README.md` - any tightly coupled package (consumer to validate, or dependency to land first); omit if standalone
-3. `../PACKAGING-WORKFLOW.md` (or the `qnx-apk-packaging` skill) - the shared end-to-end packaging workflow
+3. The `qnx-apk-packaging` skill - the shared end-to-end packaging workflow and validation gate
 4. The patch workflow (`aports-patch-creation` skill) - before any patch work
 
 ## Key source links

@@ -12,7 +12,7 @@ is one copy of the skills on disk; the per-client directories are symlinks.
 ## Quick start
 
 ```bash
-git clone https://github.com/<owner>/qnx-agent-skills.git
+git clone https://github.com/emazzucabb/qnx-agent-skills.git
 cd qnx-agent-skills
 ```
 
@@ -24,9 +24,11 @@ Before doing real work, fill in `TARGET.md` with how to reach your QNX target
 (connection, authentication, and the aports tree path). The agent will ask if
 you leave placeholders in it.
 
-**New here?** `PROMPTS.md` has two copy-pasteable prompts that take you from a
-fresh clone to a completed, validated port: a readiness check, then the port
-itself, with a worked example and what a good run looks like.
+**New here?** `PROMPTS.md` holds three prompts that take you from a fresh clone
+to a completed, validated port: a readiness check, the port, then what the run
+left behind. It contains the prompts and nothing else, so you can hand the file
+to an agent directly. `RUNBOOK.md` is the companion for you — what a good run
+looks like, warning signs, and how to reset between runs.
 
 > If your client's permission handling blocks the on-target password workflow,
 > switch to manual approval mode and grant passwordless `apk` on the target.
@@ -45,7 +47,9 @@ If your client only reads a global skills directory, run `./setup.sh` once:
 ```
 AGENTS.md      canonical agent instructions: setup, rules, skill map
 CLAUDE.md      pointer to AGENTS.md, so Claude Code finds it automatically
-PROMPTS.md     copy-pasteable prompts: readiness check, then a full port
+PROMPTS.md     the three prompts, and nothing else - safe to hand to an agent
+RUNBOOK.md     operator guide: good-run criteria, warning signs, reset steps
+SOLUTIONS.md   worked answers (SPOILERS) - move it aside for a derivation run
 TARGET.md      your QNX target: connection, auth, tree path (you fill this in)
 skills/        the skill set, one directory per skill
 projects/      per-port notes and reports land here
@@ -83,5 +87,6 @@ welcome.
 
 Builds are native. Packages are built on the QNX target with Alpine's `abuild`,
 compiled by the target's own toolchain, not cross-compiled from the host. The
-agent connects over SSH, edits and builds on the target, and stops before git;
-a human reviews and pushes.
+agent connects over SSH, edits and builds on the target, and stops short of
+writing history: it uses git to inspect the tree and to generate patches, but a
+human makes the commits and pushes.

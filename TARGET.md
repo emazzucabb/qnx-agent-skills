@@ -81,22 +81,42 @@ Record the tree with the SSH remote pointing at your fork as the authoritative o
 2. `cd` into the package directory in the authoritative tree.
 3. Edit APKBUILD / source / patches in place on the target.
 4. Iterate with `abuild -K` (keeps `src/`); test changes with the native build system in the unpacked tree. Never `abuild -r` while iterating (it wipes `src/`).
-5. Run the validation gate before reporting complete (see CLAUDE.md and `qnx-apk-packaging`).
-6. The human runs all git operations from the target. The agent never commits or pushes.
+5. Run the validation gate before reporting complete (see `AGENTS.md` and `qnx-apk-packaging`).
+6. The human owns the commit and PR record. The agent may inspect the tree with read-only
+   git and use git inside `src/` to generate patches, but never commits to the aports tree
+   and never pushes.
 
 ## Non-interactive abuild dependency install
 
-`abuild -r` installs makedepends through `$SUDO_APK`, which cannot gain root without a tty and fails with `builddeps failed`. Fix: point `SUDO_APK` at a wrapper that pipes the dev password to sudo, then build with it:
+`abuild -r` installs makedepends through `$SUDO_APK`, which cannot gain root without a tty and fails with `builddeps failed`.
+
+**Preferred fix — grant passwordless apk, so no password is stored anywhere.** Confirm the real path first; the sudoers rule must name the actual binary or it will parse, install, and silently never match:
 
 ```sh
-cat > /tmp/sudo-apk <<'WRAPPER'
+command -v apk                      # /usr/bin/apk on the QSTI x86_64 image
+echo 'qnx ALL=(ALL) NOPASSWD: /usr/bin/apk' | sudo tee /etc/sudoers.d/10-apk-nopasswd
+sudo chmod 440 /etc/sudoers.d/10-apk-nopasswd
+sudo visudo -c                      # must report no errors
+```
+
+`abuild -r` then works with no wrapper and no secret on disk. Add a new drop-in rather than editing an existing one; images often already ship something like `/etc/sudoers.d/00-qnx`.
+
+**Fallback, only where sudoers cannot be edited** — a wrapper holding the dev password. Create it private: `chmod +x` alone leaves it world-readable (755) in a world-readable directory, which exposes the password that gets root to every local user.
+
+```sh
+(umask 077; cat > /tmp/sudo-apk <<'WRAPPER'
 #!/bin/sh
 printf '%s\n' <password> | sudo -S apk "$@"
 WRAPPER
-chmod +x /tmp/sudo-apk
+)
+chmod 700 /tmp/sudo-apk
+ls -la /tmp/sudo-apk                # confirm -rwx------
+
 cd <authoritative-tree>/extra/<pkg>
 SUDO_APK=/tmp/sudo-apk abuild -r
 ```
+
+Note that `abuild -r` **uninstalls** makedepends when it finishes, so the second run in any sequence needs elevation again. A bare `abuild -r` that worked once will fail at `builddeps failed` the next time.
 
 ## Token-efficient remote-build pattern
 
@@ -134,4 +154,14 @@ Record anything specific to your image that bit you once, so it is not rediscove
     Net effect: no consumer can enable SSH in a shared library on this image.
   - `libssh2` is not in the aports tree; it exists only in the local
     `/var/home/qnx/packages/extra` repo.
+- Orphaned `.makedepends-*` virtual packages accumulate across interrupted builds and
+  are a documented cause of `builddeps failed` (see `qnx-apk-packaging`). Check with
+  `apk info | grep makedepends` and clear with
+  `sudo apk del $(apk info | grep makedepends)`.
+- Sudoers permissions are wrong out of the box (confirmed 2026-08-06). `sudo visudo -c`
+  reports `bad permissions, should be mode 0440` for both `/etc/sudoers` (ships 0640)
+  and `/etc/sudoers.d/00-qnx` (ships 0664, i.e. group-writable). sudo tolerates this
+  today, but some builds refuse to run at all on bad sudoers permissions, and a
+  group-writable drop-in is a local privilege concern. Fix once `visudo -c` otherwise
+  passes: `sudo chmod 440 /etc/sudoers /etc/sudoers.d/00-qnx`.
 - Any repaired system files: none so far on this image.

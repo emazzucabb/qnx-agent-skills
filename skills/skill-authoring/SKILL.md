@@ -36,8 +36,8 @@ description: "..."
 
 `description` is the field that decides whether the skill gets loaded, so it earns the most care. It is injected into the agent's context ahead of the skill body, and the agent uses it to decide relevance. Requirements:
 
-- Write it in the **third person**, describing the skill. Not "Read this first" or "You must check" but "Guide for..." or "Covers...". Point of view drift across a skill set degrades selection.
 - Cover both **what the skill contains and when to read it**. The "when" is what makes it fire at the right moment. Name the concrete triggers: the error text, the file type, the task phrase.
+- Lead with the contents ("Covers...", "Guide for...", "Build-method-independent facts for..."). A direct reading instruction ("Read this when a port hits a platform-level wall") is fine and useful for the trigger half — several skills here use it. What matters is consistency across the set, not avoiding the imperative.
 - Stay under 1024 characters. Aim for two or three sentences.
 
 A weak description says what the skill is about. A strong one lists the situations that should send you to it.

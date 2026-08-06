@@ -81,12 +81,18 @@ Keep one package per review unless a dependency chain requires a tightly coupled
 
 ## The validation gate (must pass before reporting work complete)
 
+Run on the target, in the package directory of the authoritative aports tree:
+
 ```bash
 abuild clean && abuild -K unpack prepare  # patches APPLY here, no Hunk FAILED, no .rej
 abuild -r -c -K                        # builds, tests pass, expected APKs produced
 find pkg -name '*.so*' | sort          # subpackage split correct, nothing orphaned
-git status                             # only intended files modified
+git status                             # read-only check: only intended files modified
 ```
+
+If the target needs the `SUDO_APK` elevation wrapper (see TARGET.md), the `abuild -r`
+line needs it too: `SUDO_APK=/tmp/sudo-apk abuild -r -c -K`. Without it the gate fails at
+`builddeps failed` before compiling anything, which looks like a package problem and is not.
 
 This gate is the human's check. A local agent can run the commands, but the judgment to proceed is the driver's.
 

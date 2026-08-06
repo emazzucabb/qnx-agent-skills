@@ -100,6 +100,11 @@ This `.git` directory lives inside `src/`, which is build output and is never co
 to the aports tree (`abuild clean` deletes the whole thing). If the upstream tarball
 already ships a `.git`, skip `git init` and just `git add -A && git commit` on top.
 
+**This is not a repo git operation and no rule forbids it.** The universal rule is that
+you never push and never write the commit history a human reviews. A throwaway repo
+inside `src/`, which `abuild clean` deletes, is neither: it is the tool that produces a
+correctly formatted patch. Do not fall back to plain `diff` to avoid touching git.
+
 **Step 3: Apply your changes**
 ```bash
 # Re-apply the changes you validated in Phase 1
@@ -130,11 +135,22 @@ That produces the `From <sha>` + subject form Alpine also uses. Pick one; do not
 both forms in a single patch file.
 
 **Step 5: Verify the format**
+
+The patch must carry `a/` and `b/` path prefixes. Check for them rather than checking the
+first line, because the first lines differ by method and neither is wrong:
+
 ```bash
-head -n 3 NNNN-your-new-patch.patch
-# must start with:  --- a/path/to/file.ext
-#                   +++ b/path/to/file.ext
+grep -E '^(diff --git|--- |\+\+\+ )' NNNN-your-new-patch.patch
+# git diff         → diff --git a/path b/path
+#                    --- a/path/to/file.ext
+#                    +++ b/path/to/file.ext
+# git format-patch → same, below the From/Subject/Date header block
 ```
+
+Every `---`/`+++` line that names a file must carry the prefix. (`git format-patch` also
+emits a bare `---` separator before the diffstat — that one is expected and the pattern
+above skips it.) If any file line shows a bare or `pkgname-version/`-prefixed path, you
+did not use git; go back to Step 2.
 
 **Do not copy the header style of neighbouring patches in this tree.** `a/` and `b/`
 prefixes are the Alpine standard - a survey of 75 patches across 16 Alpine aports
@@ -279,19 +295,19 @@ abuild clean && abuild -K unpack prepare   # no Hunk FAILED, no .rej
 abuild -r -c -K
 ```
 
-## When Claude should ask before acting
+## When to ask before acting
 
-Claude should ASK the user before:
-1. Creating any patch - confirm changes are tested first
+Ask the user before:
+1. Creating any patch - state the tested change and confirm it is the one to capture
 2. Deviating from the `a/`+`b/` header format documented above (the format itself is
    settled and needs no confirmation)
-3. Running `abuild -r` - confirm user is done with development
-4. Modifying paths in patch - verify against existing patches
+3. Running `abuild -r` - it wipes `src/`, so confirm development is finished
+4. Changing paths inside an existing patch
 
-Claude should NEVER:
-1. Assume patch format without checking existing patches
-2. Suggest `abuild -r` during iterative development
-3. Create patches without confirming changes work
+Never:
+1. Assume the patch format instead of verifying it with Step 5
+2. Use `abuild -r` during iterative development
+3. Create a patch from a change that has not been proven to work
 4. Guess at file paths in patch headers
 
 ## Verification checklist
@@ -299,7 +315,7 @@ Claude should NEVER:
 Before considering patch complete:
 
 - [ ] Changes tested in Phase 1 and working
-- [ ] Patch header format matches existing patches exactly
+- [ ] Every `---`/`+++` line carries an `a/`/`b/` prefix (Step 5), produced by git
 - [ ] Patch filename follows NNNN-description.patch convention
 - [ ] Patch added to APKBUILD source list
 - [ ] `abuild checksum` ran successfully

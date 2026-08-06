@@ -7,7 +7,9 @@ description: Native QNX 8.0 porting of Alpine APKBUILD packages, built on the ta
 
 ## Overview
 
-This skill provides guidance for porting Alpine Linux projects to QNX 8.0, with particular emphasis on APKBUILD system integration, managing cross-platform compatibility challenges, and working with the Vala compiler on QNX's unique environment.
+This skill provides guidance for porting Alpine Linux projects to QNX 8.0: APKBUILD integration, and the build-system walls each upstream build system hits on QNX.
+
+Most ports land in "Build systems on QNX" below — autotools (the `x86pc` build triple and libtool `-fPIC`) covers the common case, and CMake and Meson are handled there too. The Vala/valac material in Phase 3 is a narrower special case; skip it unless the package actually builds Vala.
 
 ## Environment context
 
@@ -18,12 +20,11 @@ This skill provides guidance for porting Alpine Linux projects to QNX 8.0, with 
 - **Target System**: QNX 8.0 (QEMU x86_64 or RPi5 aarch64), where the build actually runs
 - **QNX Image**: Quick Start Target Image (QSTI) or Custom Target Image (CTI) for QEMU/RPi; the build runs on the target
 - **Build System**: Alpine's APKBUILD, built natively on the target with abuild
-- **Primary Focus (historical)**: Building "granite" library and its dependencies
 
 ### Key toolchain details
-- **Vala Compiler**: valac 0.56.18
-- **Build System**: Meson (primary), with APKBUILD wrappers
-- **Compiler Settings**: Debug builds with LTO disabled, single-threaded compilation for stability
+- **Compiler**: the native QNX `cc` is clang; expect clang diagnostics, not gcc ones
+- **Vala compiler** (Vala packages only): valac 0.56.18
+- **Compiler settings**: LTO disabled repo-wide; single-threaded compilation where a build is unstable
 
 ## Core porting workflow
 
@@ -204,12 +205,13 @@ cc -c file.c  # See if C compilation works (native toolchain is clang)
 
 ### Testing patches
 ```bash
-# Always test patches before committing to APKBUILD
+# Dry-run an existing patch before registering it in APKBUILD
 patch --dry-run -p1 < changes.patch
-
-# Generate patches in correct format
-diff -u a/file.vala b/file.vala > file.patch
 ```
+
+Do not generate patches with plain `diff`. Patches are produced with git inside `src/`,
+which yields the required `a/`/`b/` header format by construction — see
+`aports-patch-creation`, which is the source of truth for patch mechanics.
 
 ### Build system debugging
 ```bash
@@ -244,9 +246,9 @@ These are established conventions of the aports repo; following them keeps a por
 Do not comment repo-wide conventions like LTO or `-Qunused-arguments`. Reserve comments for package-specific QNX deviations (see qnx-apk-packaging step 3).
 
 ### Collaboration support
-- **Patch Generation**: Always use `diff -u` with `a/` and `b/` prefixes
-- **Testing Patches**: Use `patch --dry-run` before applying
-- **Documentation**: Keep notes on which files required which fixes
+- **Patch generation**: always with git inside `src/`, never plain `diff` (see `aports-patch-creation`)
+- **Testing patches**: use `patch --dry-run` before applying
+- **Documentation**: keep notes on which files required which fixes
 
 ### Memory management
 - **Use debug builds**: `-g -O0` helps catch issues early
@@ -292,12 +294,14 @@ abuild -r -c -K
 # Test individual Vala compilation
 valac --pkg=glib-2.0 --pkg=gobject-2.0 file.vala
 
-# Generate clean patches (header must be a/ and b/, see aports-patch-creation)
-diff -u original/file.vala modified/file.vala > fix.patch
+# Generate a patch: git inside src/, never plain diff (see aports-patch-creation)
+cd src/pkgname-version/
+git init -q && git add -A && git commit -qm baseline
+# ... re-apply the proven change ...
+git diff > ../../NNNN-description.patch
 
-# Apply and test patch
+# Dry-run an existing patch
 patch --dry-run -p1 < fix.patch
-patch -p1 < fix.patch
 
 # Meson clean rebuild
 rm -rf output
