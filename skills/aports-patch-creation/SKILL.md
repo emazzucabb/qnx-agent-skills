@@ -25,8 +25,36 @@ This phase happens in the extracted source directory. Make changes, test with na
 ```bash
 cd /path/to/aports/category/pkgname
 abuild clean      # Remove old artifacts
-abuild unpack     # Extract tarball and apply existing patches
+abuild unpack     # Extract tarball ONLY - does not apply patches
+abuild prepare    # Applies the patches in source=
 ```
+
+**`abuild unpack` does not apply patches.** It only extracts the tarball. Patches are
+applied by `prepare` (via `default_prepare`). The `Checking sha512sums... yourpatch.patch: OK`
+line in the unpack output is checksum verification, not application, and is easy to
+misread as proof the patch went in. If you skip `prepare`, you will iterate against
+unpatched source and may never notice. Confirmed on the libgit2 1.9.6 port (2026-08-05),
+where the inherited Alpine test patches silently did not apply.
+
+Verify application by inspecting the source, not the log:
+
+```bash
+grep -n "<a string your patch adds>" src/pkgname-version/path/to/file
+find src -name '*.rej'          # must be empty
+```
+
+**Install the make-dependencies before iterating.** `abuild` removes its
+`.makedepends-*` virtual package when a build finishes or fails, and Phase 1
+deliberately does not use `abuild` — so nothing puts them back. A native `./configure`
+or `cmake` in `src/` will then fail on a dependency that the abuild run had satisfied
+moments earlier, which looks like a package problem and is not:
+
+```
+configure: error: libgpg-error was not found
+```
+
+Install them explicitly first (`sudo apk add <the makedepends>`), then iterate.
+Confirmed on the libassuan 2.5.7 port (2026-08-05).
 
 **Iterative testing:**
 ```bash
@@ -53,70 +81,76 @@ Only proceed here after Phase 1 changes are tested and working.
 ```bash
 cd /path/to/aports/category/pkgname
 abuild clean
-abuild unpack    # Fresh extraction with existing patches applied
+abuild -K unpack prepare    # Fresh extraction WITH existing patches applied
 ```
 
-**Step 2: Create .orig backup of file to modify**
+**Step 2: Snapshot the prepared tree with git**
+
+Alpine's patches are produced by git, which is why they all carry `a/` and `b/` path
+prefixes. Use git here too and the format comes out correct with no hand-editing.
+
 ```bash
 cd src/pkgname-version/
-cp path/to/file.ext path/to/file.ext.orig
+git init -q
+git add -A
+git commit -qm "baseline"
 ```
+
+This `.git` directory lives inside `src/`, which is build output and is never committed
+to the aports tree (`abuild clean` deletes the whole thing). If the upstream tarball
+already ships a `.git`, skip `git init` and just `git add -A && git commit` on top.
 
 **Step 3: Apply your changes**
 ```bash
-# Edit the file with your tested changes
+# Re-apply the changes you validated in Phase 1
 vi path/to/file.ext
 ```
 
-**Step 4: Generate diff from project root**
+**Step 4: Generate the patch**
 ```bash
-# From src/pkgname-version/ directory:
-diff -u path/to/file.ext.orig path/to/file.ext > ../../NNN-descriptive-name.patch
+# From src/pkgname-version/ :
+git diff > ../../NNNN-descriptive-name.patch
 ```
 
-Where NNN is the next sequential patch number (001, 002, etc.)
+Where NNNN is the next sequential four-digit patch number (0001, 0002, etc.)
 
-**Step 5: Fix patch header format**
+`git diff` emits exactly the Alpine format - `diff --git a/… b/…` followed by
+`--- a/…` / `+++ b/…`. **There is no header to fix.** If you find yourself editing
+`---`/`+++` lines by hand, you have used plain `diff` instead of git; go back and use git.
 
-Edit the patch file to match Alpine format:
+When the patch deserves a commit message or attribution (an upstream backport, a CVE
+fix), commit the change and export it instead:
 
-**WRONG format (what diff produces):**
-```diff
---- ./path/to/file.ext.orig
-+++ ./path/to/file.ext
-```
-
-**CORRECT format (Alpine standard):**
-```diff
---- a/path/to/file.ext
-+++ b/path/to/file.ext
-```
-
-Remove:
-- `.orig` from first line
-- `./` prefix from both lines
-
-Add:
-- `a/` prefix to first line
-- `b/` prefix to second line
-
-**Verification:**
 ```bash
-# Compare your patch header to existing patches:
-cd /path/to/aports/category/pkgname
-head -n 3 001-existing-patch.patch
-head -n 3 NNN-your-new-patch.patch
-# Headers should match format exactly
+git commit -aqm "short summary line"
+git format-patch -1 --stdout > ../../NNNN-descriptive-name.patch
 ```
+
+That produces the `From <sha>` + subject form Alpine also uses. Pick one; do not mix
+both forms in a single patch file.
+
+**Step 5: Verify the format**
+```bash
+head -n 3 NNNN-your-new-patch.patch
+# must start with:  --- a/path/to/file.ext
+#                   +++ b/path/to/file.ext
+```
+
+**Do not copy the header style of neighbouring patches in this tree.** `a/` and `b/`
+prefixes are the Alpine standard - a survey of 75 patches across 16 Alpine aports
+packages found 73 using `a/`+`b/` (via `diff --git a/… b/…` or `--- a/…`) and only 2
+using bare paths. The QNX tree, however, contains many older patches written with bare
+paths (`--- pkgname-version/path/to/file`). Those are legacy and must not be used as the
+model for new work. Match the standard above, not the neighbour.
 
 **Step 6: Add patch to APKBUILD**
 
 Edit APKBUILD and add your patch filename to the `source=` list:
 ```bash
 source="https://example.com/pkgname-$pkgver.tar.xz
-    001-existing-patch.patch
-    002-another-patch.patch
-    NNN-your-new-patch.patch
+    0001-existing-patch.patch
+    0002-another-patch.patch
+    NNNN-your-new-patch.patch
     "
 ```
 
@@ -178,77 +212,79 @@ A matching sha512 proves the patch file is byte-identical to what is recorded, N
 **Solution:** Create one patch per logical change, not per file
 - If files are related (single bug fix), use one patch
 - If independent changes, use separate patches
-- Use descriptive names: `001-fix-qnx-audio.patch`, `002-add-wayland-support.patch`
+- Use descriptive names: `0001-fix-qnx-audio.patch`, `0002-add-wayland-support.patch`
 
 ## Patch naming convention
 
-Format: `NNN-descriptive-kebab-case-name.patch`
+Format: `NNNN-descriptive-kebab-case-name.patch`
 
-- NNN: Sequential number (001, 002, etc.)
+- NNNN: Sequential number, four digits (0001, 0002, etc.) - this is what `git format-patch` emits and what Alpine uses
 - descriptive: What the patch does
 - kebab-case: lowercase with hyphens
 
 **Good examples:**
-- `001-fix-qnx-processor-detection.patch`
-- `002-add-wayland-support.patch`
-- `003-disable-broken-feature.patch`
+- `0001-fix-qnx-processor-detection.patch`
+- `0002-add-wayland-support.patch`
+- `0003-disable-broken-feature.patch`
 
 **Bad examples:**
 - `fix.patch` (no number, not descriptive)
-- `001_Fix_QNX.patch` (underscores, wrong case)
+- `0001_Fix_QNX.patch` (underscores, wrong case)
 - `qnx-processor.patch` (no number)
 
 ## Multi-file patches
 
-If multiple files need changes:
+No special handling needed - the git workflow covers it. Edit every file the change
+touches, then `git diff` once. All files land in a single correctly-formatted patch:
 
 ```bash
-# Create backups for each file
-cp path/to/file1.c path/to/file1.c.orig
-cp path/to/file2.h path/to/file2.h.orig
-
-# Make all changes
-
-# Generate unified patch with all changes
 cd src/pkgname-version/
-diff -Nur . . > ../../NNN-description.patch
+vi path/to/file1.c
+vi path/to/file2.h
+git diff > ../../NNNN-description.patch
 ```
 
-Or use `diff -r` for directory comparison.
+Group by logical change, not by file: one patch per reason, however many files that
+takes. Independent fixes get separate patches (make a `git commit` between them and use
+`git format-patch` if you want them split cleanly).
 
 ## Quick reference
 
 **Workflow commands:**
 ```bash
-# Setup
-abuild clean && abuild unpack
+# Setup (patches from source= get applied by prepare, not unpack)
+cd /path/to/aports/category/pkgname
+abuild clean && abuild -K unpack prepare
+sudo apk add <the makedepends>          # abuild removed them; Phase 1 needs them
 
-# Create backup
+# Phase 1: test the change with the NATIVE build system, not abuild
 cd src/pkgname-version/
-cp file.ext file.ext.orig
-
-# Make changes
 vi file.ext
+./configure && make                     # or cmake/ninja, or meson
+# ... iterate until the fix is proven ...
 
-# Create patch
-diff -u file.ext.orig file.ext > ../../NNN-name.patch
+# Phase 2: snapshot, re-apply, export
+cd /path/to/aports/category/pkgname
+abuild clean && abuild -K unpack prepare
+cd src/pkgname-version/
+git init -q && git add -A && git commit -qm baseline
+vi file.ext                             # re-apply the proven change
+git diff > ../../NNNN-name.patch        # correct a/ b/ format, no hand-editing
 
-# Fix header (manual edit)
-# Add to APKBUILD source list
-
-# Update checksums
+# Register and verify
 cd ../..
+# add NNNN-name.patch to source= in APKBUILD
 abuild checksum
-
-# Final test
-abuild -r
+abuild clean && abuild -K unpack prepare   # no Hunk FAILED, no .rej
+abuild -r -c -K
 ```
 
 ## When Claude should ask before acting
 
 Claude should ASK the user before:
 1. Creating any patch - confirm changes are tested first
-2. Suggesting patch format - show example from existing patch
+2. Deviating from the `a/`+`b/` header format documented above (the format itself is
+   settled and needs no confirmation)
 3. Running `abuild -r` - confirm user is done with development
 4. Modifying paths in patch - verify against existing patches
 
@@ -264,7 +300,7 @@ Before considering patch complete:
 
 - [ ] Changes tested in Phase 1 and working
 - [ ] Patch header format matches existing patches exactly
-- [ ] Patch filename follows NNN-description.patch convention
+- [ ] Patch filename follows NNNN-description.patch convention
 - [ ] Patch added to APKBUILD source list
 - [ ] `abuild checksum` ran successfully
 - [ ] `abuild -r` completes without errors
@@ -276,7 +312,7 @@ After creating patch, verify it's being applied:
 
 ```bash
 abuild clean
-abuild unpack
+abuild -K unpack prepare
 cd src/pkgname-version/
 # Check that your changes are present in the source
 grep "your change marker" path/to/file.ext

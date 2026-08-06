@@ -46,6 +46,15 @@ Run a clean `abuild -r -c -K`. Inspect the generated APK names and subpackages. 
 
 If the apk environment is healthy (`apk add --simulate` returns OK) but `builddeps` still fails, suspect the `SUDO_APK` elevation wrapper itself rather than the package or the repo. Transferring the wrapper to the target through a heredoc-over-SSH can let an unquoted `$@` expand mid-transfer, leaving the wrapper as `apk ""`, so every make-dependency install runs an empty apk command. Confirmed on the json-c port. Fix by writing the wrapper as a local file and pushing it verbatim, not inlining it in a heredoc.
 
+**A stale build directory under `-K` can mask an APKBUILD flag change.** `abuild -r -K`
+keeps `src/`, including any CMake/Meson build directory from the previous run. CMake
+caches `CMAKE_C_FLAGS` at first configure, so re-running `cmake -B <same-dir>` reuses the
+old flags and a newly added `CFLAGS` export never reaches the compile line — the build
+fails with the identical error and the fix looks wrong. Confirmed on the libgit2 1.9.6
+port (2026-08-05) when adding `-Qunused-arguments`. If a flag change appears to have no
+effect, check the actual compile line in the log for the flag before doubting the fix,
+and run `abuild clean` before the rebuild.
+
 Target-specific instances of these belong in TARGET.md.
 
 ### 7. Test package function
@@ -73,7 +82,7 @@ Keep one package per review unless a dependency chain requires a tightly coupled
 ## The validation gate (must pass before reporting work complete)
 
 ```bash
-abuild clean && abuild unpack          # patches apply, no Hunk FAILED, no .rej
+abuild clean && abuild -K unpack prepare  # patches APPLY here, no Hunk FAILED, no .rej
 abuild -r -c -K                        # builds, tests pass, expected APKs produced
 find pkg -name '*.so*' | sort          # subpackage split correct, nothing orphaned
 git status                             # only intended files modified

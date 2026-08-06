@@ -280,7 +280,7 @@ Compilation Failure
 
 ```bash
 # Iterate on a change in the unpacked tree (does NOT wipe src):
-abuild clean && abuild unpack
+abuild clean && abuild -K unpack prepare
 cd src/pkgname-version/
 # edit source, then build natively to test:
 meson setup build && ninja -C build      # Meson projects

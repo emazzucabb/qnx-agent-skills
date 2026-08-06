@@ -55,6 +55,37 @@ The most important `open()` difference: on QNX you must pass `O_DIRECTORY` when 
 
 `PATH_MAX` lives in `<limits.h>` on QNX, not `<sys/syslimits.h>` (the BSD/macOS location some code assumes). Code that includes `<sys/syslimits.h>` for `PATH_MAX` needs the include corrected for QNX.
 
+## C standard: QNX headers require C99 or newer
+
+QNX system headers use the C99 `inline` keyword. `/usr/include/stdlib.h` declares static
+inline functions, so **any** project that compiles at `-std=c90`/`gnu90` fails on the
+first translation unit that includes a system header:
+
+```
+/usr/include/stdlib.h:94:8: error: unknown type name 'inline'
+```
+
+This is not specific to one package: it hits every project whose build system still
+defaults to c90. Confirmed on libgit2 1.9.6 (2026-08-05), where the upstream default is
+c90 for everything except Android and the build produced 171 errors.
+
+Two ways to fix it, and the choice matters for review:
+
+- **A build-system flag**, when the standard is settable from outside. CMake projects
+  that use `set(CMAKE_C_STANDARD "90" CACHE STRING ...)` are overridable with
+  `-DCMAKE_C_STANDARD=99` straight from the APKBUILD, with no patch at all. Verify
+  against pristine (unpatched) source before concluding a patch is required.
+- **A patch**, when the standard is hard-coded, or when you want the fix to be
+  upstreamable. Gate it on the platform (`CMAKE_SYSTEM_NAME STREQUAL "QNX"`, or
+  `__QNX__` in C) so other platforms are unaffected.
+
+Prefer the flag when it works: it is one APKBUILD line and carries no rebase cost on
+version bumps. Reach for a patch when the flag cannot express the fix or when upstreaming
+is the goal — and say which reason applies in the port notes.
+
+`CMAKE_SYSTEM_NAME` is `QNX` on the self-hosted target (confirmed with a standalone CMake
+probe), so it is a reliable thing to branch on.
+
 ## Macros and feature-test symbols
 
 `__QNX__` is defined by the QNX toolchain and is the symbol to gate QNX-specific code on. `__unix__` is also defined. To see every predefined symbol, pass the verbose flag to the compiler.

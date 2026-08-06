@@ -14,6 +14,13 @@ ssh <user>@<host>
 
 - User: `<user>` (depends on the image; QSTI images use `qnx`)
 - Host: `<target-host>` (the device or VM IP; use `mkqnximage --getip` for QSTI)
+- Password / key: fill in below. If SSH is forwarded to a non-standard host port
+  (a hand-rolled QEMU launcher, for example), add `-p <port>` to every ssh and
+  sshpass command in this file.
+
+> Fill these in locally, but think before you commit them. This repo is public.
+> A shared dev password in git history is public forever. Prefer key-based auth,
+> or keep your filled-in copy out of commits (`git update-index --skip-worktree TARGET.md`).
 - Port: standard SSH port `22` by default (the QSTI case, connect straight to the target IP). If your setup forwards SSH to a non-standard host port instead (for example a hand-rolled QEMU launcher forwarding host `2227` to guest `22`), add `-p <port>` to every ssh and sshpass command below.
 - Authentication: fill in your method below (password or key)
 
@@ -44,9 +51,10 @@ printf '%s\n' <password> | sudo -S <command>
 ## On-target paths
 
 - Authoritative aports tree: `<FILL IN THE PATH TO YOUR AUTHORITATIVE TREE>`
-  (Run the discovery sweep below on a fresh image to find it. This should be
-  the clean tree whose git remote points at your aports fork. Use this one path
-  for all PR-bound work.)
+  An image often carries several `aports*` trees (scratch copies, old experiments).
+  Only one is authoritative: the clean tree whose git remote points at your aports
+  fork. Identify it once with the discovery sweep below and record it here, so no
+  session has to guess. Use this one path for all PR-bound work.
 - Package output: `/var/home/qnx/packages/<repo>/<arch>` (for example `extra/x86_64`)
 - Local repo resolution: add local package output paths before remote repos in
   `/etc/apk/repositories`, then `sudo apk update` (see the `qnx-apk-packaging` skill).
@@ -103,7 +111,27 @@ grep -nE '>>>|Hunk FAILED|error:|Build complete|builddeps failed' /tmp/build.log
 
 Record anything specific to your image that bit you once, so it is not rediscovered:
 
-- Architecture: `<x86_64 QEMU / aarch64 RPi5>` (`uname -m` returns `x86pc` on x86_64 QEMU)
-- Known missing busybox applets: (for example `cmp` - fix with `checkdepends="diffutils"`; `killall` - no package available)
-- Repository issues: (for example pre-release repos returning 403 should be commented out)
-- Any repaired system files: (for example a fixed `/etc/group`, a created `/var/cache/distfiles`)
+- Architecture: x86_64 QEMU. `uname -m` returns `x86pc`; `uname -a` reports
+  `QNX localhost 8.0.0 ... x86pc QNX`. CMake reports `CMAKE_SYSTEM_NAME=QNX` and
+  `CMAKE_SYSTEM_PROCESSOR=unknown` (confirmed 2026-08-05 with a standalone probe).
+- Known missing busybox applets: `cmp` - fix with `checkdepends="diffutils"`;
+  `killall` - no package available.
+- Repository issues: check `/etc/apk/repositories` early. Two failure modes are common
+  and both print on *every* `apk add` / `apk update`:
+  - A pre-release or QA repo returning **HTTP 403 Forbidden** on the index.
+  - An internal-only mirror that fails DNS from your network
+    (`address family for host not supported`).
+  Neither is fatal, but together they make every apk transaction noisy and slow, and
+  the noise hides real errors. Comment out the ones that do not resolve for you.
+- Broken packages on this image (confirmed 2026-08-05 during the libgit2 port):
+  - `libssh2` (runtime) is an **empty package** - `apk info -L libssh2` lists no files,
+    and there is no `libssh2.so*` anywhere on the filesystem.
+  - `libssh2-dev` ships only headers plus `libssh2.pc`, and that `.pc` advertises
+    `-lssh2`, so pkg-config reports success for a library that does not exist.
+  - `libssh2-static` does provide `/usr/lib/libssh2.a`, but it was built **without
+    `-fPIC`**, so it cannot be linked into any shared object
+    (`relocation R_X86_64_PC32 ... can not be used when making a shared object`).
+    Net effect: no consumer can enable SSH in a shared library on this image.
+  - `libssh2` is not in the aports tree; it exists only in the local
+    `/var/home/qnx/packages/extra` repo.
+- Any repaired system files: none so far on this image.

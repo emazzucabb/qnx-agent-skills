@@ -16,7 +16,16 @@ All three point at `skills/`. There is one copy on disk; nothing needs duplicati
 
 If your client only reads a global directory (`~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`), run `./setup.sh` once. It links `skills/` into the global location for the client you name. If your client uses a location none of the above cover, create the symlink yourself and open a PR adding it here so the next person gets it for free.
 
-**2. Read `TARGET.md`.** It holds how to reach the QNX target: connection, authentication, the authoritative aports tree path, and any facts specific to that image. If it still has unfilled placeholders, ask the user for the missing values before doing any work that touches the target.
+**2. Read `TARGET.md`.** It holds how to reach the QNX target: connection, authentication, the authoritative aports tree path, and any facts specific to that image.
+
+`TARGET.md` ships with placeholders and **no credentials**, by design — it is a tracked file, so anything written into it can end up pushed. When you find placeholders:
+
+1. Ask the user for the missing values (user, host, port, password or key path, tree path). Do not guess them, and do not proceed to anything that touches the target until you have them.
+2. Verify the connection works before doing anything else.
+3. Then **offer** to record the values in the user's local `TARGET.md` so future sessions do not have to ask again. Only write them if the user says yes.
+4. If you do write them, tell the user plainly that `TARGET.md` is tracked by git, that a password committed to a shared or public repo is exposed permanently, and that `git update-index --skip-worktree TARGET.md` keeps their filled-in copy out of commits.
+
+Never commit the change yourself — rule 3 below applies here as everywhere.
 
 **3. Load the `qnx-porting` skill.** It is the router. It holds the task-to-skill mapping and repeats these rules in the form your client will apply them.
 
@@ -57,7 +66,7 @@ Each non-trivial port gets a folder under `projects/apks/<pkgname>/` holding a `
 Before reporting any port complete:
 
 ```bash
-abuild clean && abuild unpack          # patches apply, no Hunk FAILED, no .rej
+abuild clean && abuild -K unpack prepare  # patches APPLY here, no Hunk FAILED, no .rej
 abuild -r -c -K                        # builds, tests pass, expected APKs produced
 find pkg -name '*.so*' | sort          # subpackage split correct, nothing orphaned
 git status                             # only intended files modified

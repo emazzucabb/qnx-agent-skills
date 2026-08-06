@@ -24,9 +24,13 @@ Before doing real work, fill in `TARGET.md` with how to reach your QNX target
 (connection, authentication, and the aports tree path). The agent will ask if
 you leave placeholders in it.
 
-> On Claude Code, the on-target password workflow is blocked by auto mode's
-> classifier. Use manual mode and grant passwordless apk on the target; see the
-> "Auto mode and the permission classifier" section in `TARGET.md`.
+**New here?** `PROMPTS.md` has two copy-pasteable prompts that take you from a
+fresh clone to a completed, validated port: a readiness check, then the port
+itself, with a worked example and what a good run looks like.
+
+> If your client's permission handling blocks the on-target password workflow,
+> switch to manual approval mode and grant passwordless `apk` on the target.
+> `TARGET.md` documents the non-interactive `sshpass` and `SUDO_APK` patterns.
 
 If your client only reads a global skills directory, run `./setup.sh` once:
 
@@ -41,6 +45,7 @@ If your client only reads a global skills directory, run `./setup.sh` once:
 ```
 AGENTS.md      canonical agent instructions: setup, rules, skill map
 CLAUDE.md      pointer to AGENTS.md, so Claude Code finds it automatically
+PROMPTS.md     copy-pasteable prompts: readiness check, then a full port
 TARGET.md      your QNX target: connection, auth, tree path (you fill this in)
 skills/        the skill set, one directory per skill
 projects/      per-port notes and reports land here
