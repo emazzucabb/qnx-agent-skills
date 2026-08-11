@@ -24,11 +24,19 @@ Before doing real work, fill in `TARGET.md` with how to reach your QNX target
 (connection, authentication, and the aports tree path). The agent will ask if
 you leave placeholders in it.
 
-**New here?** `PROMPTS.md` holds three prompts that take you from a fresh clone
-to a completed, validated port: a readiness check, the port, then what the run
-left behind. It contains the prompts and nothing else, so you can hand the file
-to an agent directly. `RUNBOOK.md` is the companion for you — what a good run
-looks like, warning signs, and how to reset between runs.
+**New here?** Three prompts take you from a fresh clone to a completed, validated
+port, and they are deliberately short:
+
+1. Can you see the skills? List them.
+2. Connect to my target and show me the aports tree.
+3. Port `<package>` and write the report.
+
+That is the whole script — the skills carry the detail, so the prompts do not
+have to. The codelab walks through them with the setup around them. Keep your
+own copy in a local `PROMPTS.md` if you like; it is gitignored on purpose, so
+your working prompts stay yours and do not sprawl into a spec.
+`RUNBOOK.md` is the companion for you — what a good run looks like, warning
+signs, and how to reset between runs.
 
 > If your client's permission handling blocks the on-target password workflow,
 > switch to manual approval mode and grant passwordless `apk` on the target.
@@ -47,9 +55,8 @@ If your client only reads a global skills directory, run `./setup.sh` once:
 ```
 AGENTS.md      canonical agent instructions: setup, rules, skill map
 CLAUDE.md      pointer to AGENTS.md, so Claude Code finds it automatically
-PROMPTS.md     the three prompts, and nothing else - safe to hand to an agent
 RUNBOOK.md     operator guide: good-run criteria, warning signs, reset steps
-               (SOLUTIONS.md is deliberately NOT in this repo - see .gitignore)
+               (PROMPTS.md and SOLUTIONS.md are deliberately NOT tracked - see .gitignore)
 TARGET.md      your QNX target: connection, auth, tree path (you fill this in)
 skills/        the skill set, one directory per skill
 projects/      per-port notes and reports land here

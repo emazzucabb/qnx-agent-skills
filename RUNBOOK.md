@@ -1,16 +1,17 @@
 # Runbook — for the human running the exercise
 
-`PROMPTS.md` holds the three prompts and nothing else, so it can be handed to an agent
-directly. Everything the operator needs is here.
+The exercise is three short prompts — can you see the skills, connect to my target and
+show me the aports tree, port `<package>` and write the report. Everything the operator
+needs around them is here.
 
 This file does not contain the answer, but it does spell out the pass criteria and name
 the skill a correct run updates, so keep it out of the agent's way during a run you intend
 to judge — hand over a copy of the repo without it, rather than relying on an instruction
 not to read it.
 
-Worked answers are deliberately **not tracked in this repo** (see `.gitignore`). If you
-keep a local `SOLUTIONS.md` for your own reference, store it outside the working tree so it
-cannot be copied into a run by accident.
+Neither your prompts nor any worked answers are tracked (see `.gitignore`). Keep a local
+`PROMPTS.md` if it helps you stay consistent between runs, and if you keep a `SOLUTIONS.md`
+store it outside the working tree so it cannot be copied into a run by accident.
 
 ---
 
