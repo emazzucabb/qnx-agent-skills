@@ -59,6 +59,16 @@ Only record what has been proven. A fact enters a skill when a command has demon
 
 Mark uncertainty as uncertainty. If something worked but you do not know why, or you suspect an environment quirk rather than a real defect, say so in the skill. A confidently wrong fact is worse than an honest open question, because the next session will build on it.
 
+**Any claim about the state of the environment ships with the command that re-checks it.** Facts of the form "X is empty", "Y is missing", "Z is broken" are the ones that rot: they were read off one image on one day, and the next session has no way to tell a durable truth from a stale observation unless you leave the check behind. A single line is enough:
+
+```sh
+sh -c '. /usr/share/abuild/functions.sh; echo "CBUILD=[$CBUILD]"'   # expect the target triple
+```
+
+Two things go wrong without it. The reader cannot cheaply obey the router's rule 1, so they take the claim on trust; and when the claim *is* wrong, there is no obvious way to prove it, so it survives another session. This is not hypothetical — `alpine-qnx-porting` carried "`$CHOST`/`$CBUILD` are empty in this image's abuild.conf" for several ports. It was literally true of the file and false of the shell `build()` runs in, and it propagated a hardcoded triple into a port before anyone ran the one-line check.
+
+State the scope you actually proved, too. "On the x86_64 QEMU image on 2026-08-06" is honest and ages well; a bare "on QNX" claims every target and every release from a single data point.
+
 ## Where a fact belongs
 
 Route by the kind of knowledge, not by which skill you happen to have open:

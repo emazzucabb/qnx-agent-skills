@@ -33,7 +33,7 @@ Never commit the change yourself, and never run `git update-index` on the user's
 
 These hold for every task, in every skill.
 
-1. **Prove claims with command output before acting.** Do not assert platform behaviour, dependency state, or build results as fact without having run the command that shows it. When you lack the information, say so and go get it rather than filling the gap with plausible reasoning.
+1. **Prove claims with command output before acting.** Do not assert platform behaviour, dependency state, or build results as fact without having run the command that shows it. When you lack the information, say so and go get it rather than filling the gap with plausible reasoning. This includes facts stated in the skills themselves: a skill is a strong prior, not evidence. Where a skill describes the current environment and that description is load-bearing for what you are about to do, spend the one command to confirm it, and correct the skill under rule 6 when it turns out to be wrong.
 
 2. **Never create a patch from an untested change.** Test in the unpacked source tree with native build tools first. The patch is written only after the change is confirmed working.
 
@@ -69,7 +69,13 @@ Before reporting any port complete. Run these **on the target**, in the package 
 
 ```bash
 abuild clean && abuild -K unpack prepare  # patches APPLY here, no Hunk FAILED, no .rej
-abuild -r -c -K                        # builds, tests pass, expected APKs produced
+abuild clean && abuild -r -c -K        # builds, tests pass, expected APKs produced
 find pkg -name '*.so*' | sort          # subpackage split correct, nothing orphaned
+readelf -d pkg/*/usr/lib/*.so.* | grep NEEDED   # every non-libc entry covered by depends=
 git status                             # read-only check: only intended files modified
 ```
+
+A package with missing runtime dependencies passes every other line of this gate — it
+builds, tests, and splits correctly, and only fails on a machine that does not already
+have the dependency installed. See `qnx-apk-packaging` for how to resolve each `NEEDED`
+entry to its owning package.

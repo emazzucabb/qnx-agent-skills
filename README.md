@@ -49,7 +49,7 @@ AGENTS.md      canonical agent instructions: setup, rules, skill map
 CLAUDE.md      pointer to AGENTS.md, so Claude Code finds it automatically
 PROMPTS.md     the three prompts, and nothing else - safe to hand to an agent
 RUNBOOK.md     operator guide: good-run criteria, warning signs, reset steps
-SOLUTIONS.md   worked answers (SPOILERS) - move it aside for a derivation run
+               (SOLUTIONS.md is deliberately NOT in this repo - see .gitignore)
 TARGET.md      your QNX target: connection, auth, tree path (you fill this in)
 skills/        the skill set, one directory per skill
 projects/      per-port notes and reports land here

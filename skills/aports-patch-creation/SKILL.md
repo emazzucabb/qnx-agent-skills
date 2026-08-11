@@ -1,6 +1,6 @@
 ---
 name: aports-patch-creation
-description: "Patch creation for QNX ports of Alpine APKBUILD packages: making, formatting, naming, and validating .patch files against the QNX-unpacked tree. Read before producing any patch content or diagnosing a patch-apply failure (Hunk FAILED, .rej, fuzz rejected by BusyBox patch). Core rule: never create a patch from an untested change; confirm the fix in the unpacked source first. Applies whenever debugging a build error or editing patches for an APKBUILD."
+description: "Patch creation for QNX ports of Alpine APKBUILD packages: writing the change itself, then making, formatting, naming, and validating .patch files against the QNX-unpacked tree. Read before editing any source for a port and before producing any patch content, and when diagnosing a patch-apply failure (Hunk FAILED, .rej, fuzz rejected by BusyBox patch). Covers how the hunk should look - positive __QNX__ conditionals placed inside the source's existing platform branches - as well as patch mechanics. Core rule: never create a patch from an untested change; confirm the fix in the unpacked source first. Applies whenever debugging a build error or editing patches for an APKBUILD."
 ---
 
 # Alpine Linux APKBUILD Patch Creation Skill
@@ -14,6 +14,73 @@ This skill provides the definitive workflow for creating patches for Alpine Linu
 2. **NEVER use `abuild -r` during development** - It wipes your working directory
 3. **ALWAYS verify patch format** matches Alpine standards before using
 4. **Follow the exact workflow** - Don't skip steps or improvise
+
+## What the change should look like
+
+Decide this before Phase 1, not at review. The rest of this skill covers patch *mechanics*
+— testing, generating, formatting. This section covers the *content* of the hunk, which is
+settled while you are editing the source and is expensive to revisit once the patch is
+generated, checksummed and validated.
+
+**Match the source file's existing platform structure.** If the file already branches on
+platform, put the QNX change inside that structure using a positive `__QNX__` test:
+
+```c
+#ifdef HAVE_SOME_OTHER_PLATFORM
+# include <that-platform.h>
+#else
+# include <the-portable-headers.h>
+# ifdef __QNX__
+#  include <the-header-qnx-also-needs.h>
+# endif
+#endif
+```
+
+The shape is what matters: find the branch that already covers your platform's case, and
+add a positive `__QNX__` test *inside* it.
+
+Do not introduce a second, parallel guard mechanism alongside the branching the file
+already has. A feature-test macro the project's configure already defines (for example an
+`HAVE_<HEADER>_H`) is perfectly good engineering and is the right choice when the file has
+**no** platform branching — but where platform branches exist, adding a feature-test block
+elsewhere in the include list splits one decision across two mechanisms and reads to a
+reviewer as a different change from the one the rest of the file makes.
+
+This form is easy to get wrong in a way nothing catches: a parallel-guard patch compiles,
+links, passes the tests and passes the whole validation gate. It is simply not the house
+form, and by the time the review-reduction pass in `qnx-apk-packaging` step 9 looks at it,
+the patch is already written, checksummed and validated, so fixing the form costs a full
+re-run of the gate. Settle it here, before Phase 1.
+
+Prefer the smallest change that fits what the file already does. Keep the reasoning for the
+form in the port's `REPORT.md`, not in a comment inside the hunk.
+
+**Every line of the hunk must be independently proven, not just the hunk as a whole.**
+Rule 2 says never patch an untested change, and it is easy to satisfy that in spirit while
+missing it in practice: you add two things at once, the build goes green, and you have
+proven the *pair* works — not that both were needed. The extra line then ships as
+unexplained cargo that a reviewer cannot distinguish from the real fix.
+
+Minimise before exporting the patch. Remove each element in turn and rebuild the single
+affected object; keep only what actually fails without it:
+
+```sh
+# in the unpacked tree, after the combined fix is working
+<edit out one line of your change>
+make <the-one-object>.lo     # or: cc -c the-one-file.c
+# still compiles? that line was not load-bearing - drop it
+```
+
+This bites hardest on include fixes, where headers often reach the translation unit through
+more than one path, so an include can look obviously required and be entirely redundant.
+Reading a header to see that it only forward-declares a type is **not** proof that a second
+include is needed — the complete definition may arrive via another include already in the
+file. Compile it both ways and believe the compiler.
+
+The same reasoning applies to build flags (see `alpine-qnx-porting` on `-fPIC`): a flag or
+a line that no observed failure requires is what the `qnx-apk-packaging` review-reduction
+pass exists to strip, and it is far cheaper to strip it here, before the patch is generated
+and checksummed.
 
 ## Two-phase workflow
 
@@ -33,8 +100,8 @@ abuild prepare    # Applies the patches in source=
 applied by `prepare` (via `default_prepare`). The `Checking sha512sums... yourpatch.patch: OK`
 line in the unpack output is checksum verification, not application, and is easy to
 misread as proof the patch went in. If you skip `prepare`, you will iterate against
-unpatched source and may never notice. Confirmed on the libgit2 1.9.6 port (2026-08-05),
-where the inherited Alpine test patches silently did not apply.
+unpatched source and may never notice. Inherited Alpine patches are the usual casualty:
+they are listed in `source=`, they checksum fine, and they silently never apply.
 
 Verify application by inspecting the source, not the log:
 
@@ -50,11 +117,33 @@ or `cmake` in `src/` will then fail on a dependency that the abuild run had sati
 moments earlier, which looks like a package problem and is not:
 
 ```
-configure: error: libgpg-error was not found
+configure: error: <some dependency> was not found
 ```
 
 Install them explicitly first (`sudo apk add <the makedepends>`), then iterate.
-Confirmed on the libassuan 2.5.7 port (2026-08-05).
+
+**abuild's build variables are not set in your shell either, for the same reason.** An
+APKBUILD's `build()` runs with `$CBUILD`, `$CHOST`, `$CFLAGS` and friends already
+populated by abuild; a plain SSH shell in `src/` has none of them. Copying the
+APKBUILD's own configure line into that shell therefore does something different from
+what the package does, and on QNX it fails in a way that looks like the bug you are
+trying to fix:
+
+```sh
+./configure --build=$CBUILD --host=$CHOST ...
+# with CBUILD empty this becomes --build= --host=, configure falls back to config.guess:
+#   Invalid configuration `unknown-x86pc-nto-qnx8.0.0': machine `unknown-x86pc' not recognized
+```
+
+Source them before iterating, and the manual build matches the packaged one:
+
+```sh
+. /usr/share/abuild/functions.sh   # sets CBUILD/CHOST to x86_64-pc-nto-qnx8.0.0
+./configure --build=$CBUILD --host=$CHOST --prefix=/usr
+```
+
+The general rule: when a Phase 1 reproduction fails where the abuild run succeeded,
+suspect the difference between the two environments before suspecting your change.
 
 **Iterative testing:**
 ```bash
@@ -99,6 +188,23 @@ git commit -qm "baseline"
 This `.git` directory lives inside `src/`, which is build output and is never committed
 to the aports tree (`abuild clean` deletes the whole thing). If the upstream tarball
 already ships a `.git`, skip `git init` and just `git add -A && git commit` on top.
+
+**Snapshot a freshly-unpacked tree, never one you have already built in.** Step 1's
+`abuild clean && abuild -K unpack prepare` is what makes this work, and it is tempting to
+skip it when the tree from Phase 1 is sitting right there with the proven fix already in
+it. Do not: `git add -A` in a configured autotools tree also tracks the generated build
+artifacts, and the next `make` rewrites them, so `git diff` emits the real one-line source
+change buried in thousands of lines of `.deps/*.Plo` dependency-list churn and `.Tpo`
+deletions. The patch is unusable and the mistake is invisible until you read the output.
+Re-unpack, snapshot clean, then re-apply the change by hand. Verify before exporting:
+
+```sh
+git diff --stat        # must list only the source files you meant to change
+```
+
+Typical failure: snapshotting a built autotools tree yields a diff across half a dozen
+files, all but one of them bookkeeping churn; re-running from a clean unpack gives the
+intended single-file patch.
 
 **This is not a repo git operation and no rule forbids it.** The universal rule is that
 you never push and never write the commit history a human reviews. A throwaway repo
@@ -158,6 +264,18 @@ packages found 73 using `a/`+`b/` (via `diff --git a/… b/…` or `--- a/…`) 
 using bare paths. The QNX tree, however, contains many older patches written with bare
 paths (`--- pkgname-version/path/to/file`). Those are legacy and must not be used as the
 model for new work. Match the standard above, not the neighbour.
+
+**When the patch you are replacing is itself one of the legacy ones**, the standard still
+wins, but flag it rather than letting a reviewer discover it. Regenerating a bare-path
+patch through the git workflow rewrites every header line, so a small change to the
+patched hunk arrives in review as a full-file rewrite of the `.patch`, and the reviewer
+sees format churn instead of your change. Do not hand-edit headers back to the old style
+to keep the diff small — that reintroduces exactly what the standard removes. Regenerate
+normally, then state in `REPORT.md` that the patch was reformatted from bare paths to
+`a/`/`b/`, so the reviewer knows which part of the diff is content and which is format.
+Whether that package keeps the legacy format for internal consistency is the maintainer's
+call to make with the facts in front of them, not a decision to take silently in either
+direction.
 
 **Step 6: Add patch to APKBUILD**
 

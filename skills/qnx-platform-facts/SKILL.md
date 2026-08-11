@@ -47,7 +47,7 @@ Code relying on a growing/split stack (GCC `-fsplit-stack`) may not compile at a
 
 When a Linux program crashes on QNX specifically inside functions with big local arrays, suspect stack size before suspecting logic.
 
-Diagnosing a suspected stack crash (confirmed pitfalls, 2026-06-18): a stack overflow scales with input. It shows up on large or deeply-nested inputs and clears when the input shrinks. So a SIGSEGV that reproduces on one specific small input, at the same place every time, is NOT a stack overflow: it is a logic or pointer bug on that path (this is how the json-c `test_json_patch` crash on a single negative array-index case was correctly ruled out as a stack issue). Also, do not use `ulimit -s` to test the hypothesis on QNX: it reports `unlimited` and does not reflect the real per-thread stack cap, so raising or reading it tells you nothing. Test by shrinking/growing the input, or by sizing the thread/link stack explicitly, not via `ulimit`.
+Diagnosing a suspected stack crash (confirmed pitfalls, 2026-06-18): a stack overflow scales with input. It shows up on large or deeply-nested inputs and clears when the input shrinks. So a SIGSEGV that reproduces on one specific small input, at the same place every time, is NOT a stack overflow: it is a logic or pointer bug on that path. That distinction is what correctly rules a stack hypothesis in or out before you spend time on it. Also, do not use `ulimit -s` to test the hypothesis on QNX: it reports `unlimited` and does not reflect the real per-thread stack cap, so raising or reading it tells you nothing. Test by shrinking/growing the input, or by sizing the thread/link stack explicitly, not via `ulimit`.
 
 ## File API differences
 
@@ -66,8 +66,9 @@ first translation unit that includes a system header:
 ```
 
 This is not specific to one package: it hits every project whose build system still
-defaults to c90. Confirmed on libgit2 1.9.6 (2026-08-05), where the upstream default is
-c90 for everything except Android and the build produced 171 errors.
+defaults to c90. Upstreams that special-case the standard per platform (raising it only
+for Android, say) are the usual source, and the failure arrives as hundreds of errors at
+once rather than a handful.
 
 Two ways to fix it, and the choice matters for review:
 

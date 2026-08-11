@@ -46,8 +46,8 @@ thing a reviewer most needs to know.
 ## What was produced
 
 The packages and their parts, as built. For example:
-- json-c-0.19-r0.apk
-- json-c-dev-0.19-r0.apk
+- <pkgname>-<pkgver>-r<pkgrel>.apk
+- <pkgname>-dev-<pkgver>-r<pkgrel>.apk
 Note the subpackage split and anything notable about it.
 
 ## Changes made

@@ -3,8 +3,14 @@
 `PROMPTS.md` holds the three prompts and nothing else, so it can be handed to an agent
 directly. Everything the operator needs is here.
 
-This file does not contain the answer — that is `SOLUTIONS.md` — but it does spell out
-the pass criteria, so keep it out of the agent's way during a run you intend to judge.
+This file does not contain the answer, but it does spell out the pass criteria and name
+the skill a correct run updates, so keep it out of the agent's way during a run you intend
+to judge — hand over a copy of the repo without it, rather than relying on an instruction
+not to read it.
+
+Worked answers are deliberately **not tracked in this repo** (see `.gitignore`). If you
+keep a local `SOLUTIONS.md` for your own reference, store it outside the working tree so it
+cannot be copied into a run by accident.
 
 ---
 
@@ -91,17 +97,20 @@ the answer in hand.
 Do not hardcode the patch filename — the agent picks its own name under the `NNNN-*.patch`
 convention, so a literal `rm` may silently do nothing.
 
+The exercise starts with the package directory **deleted from the worktree** — `git status`
+in the aports tree should show the package's files as ` D` before a run. Reset therefore
+means deleting the directory the agent created, not restoring it from git:
+
 ```bash
-cd <aports>/extra/libassuan
-ls *.patch                      # see what it actually created
-git checkout -- APKBUILD        # you run this; the agent does not
-rm -f <the patch it created>
-abuild clean && rm -rf src pkg
+cd <aports>
+rm -rf extra/libassuan          # the whole directory the run created
+git status --short              # must show ' D' on the package files again, not ' M'
 ```
 
-`git checkout -- APKBUILD` restores the `source=` line and the checksums together, so no
-`abuild checksum` is needed. If the package directory is untracked, remove the patch from
-`source=` by hand and then run `abuild checksum`.
+Do **not** use `git checkout -- extra/libassuan/APKBUILD` here. That restores the committed
+reference port into the worktree, which un-deletes the answer and destroys the premise of
+the next run. It is the right command only if your baseline has the package tracked and
+merely modified; confirm which baseline you have with `git status` before reaching for it.
 
 Clear orphaned makedepends virtuals left by interrupted builds — `qnx-apk-packaging`
 names these as a cause of `builddeps failed`:
@@ -109,6 +118,16 @@ names these as a cause of `builddeps failed`:
 ```bash
 apk info | grep makedepends
 sudo apk del $(apk info | grep makedepends)    # if any; not while a build is running
+```
+
+**Then check that the purge did not take the toolchain with it.** Those virtuals own real
+build dependencies, and deleting them cascades: on this image it removed 138 packages and
+took `make` along, which makes the *next* run fail with `make: not found` — an environment
+failure that looks nothing like a porting problem and wastes a take.
+
+```bash
+command -v make cc patch tar pkgconf     # all must resolve
+sudo apk add build-base                  # restores make and the compiler if any are gone
 ```
 
 ### 2. This repo on the host
@@ -127,11 +146,18 @@ working as designed. Revert it only when re-running the exercise.
 
 ### 3. Move the spoilers out of reach
 
+Worked answers are not tracked here, so there is normally nothing to move. Check anyway —
+a spoiler that rides along in a folder copy is invisible until someone reviews the
+recording:
+
 ```bash
-mv SOLUTIONS.md ~/                           # put it back afterwards
+ls SOLUTIONS.md 2>/dev/null                  # must not exist in the copy you hand over
+ls projects/apks/<pkgname>/                  # a previous run's REPORT.md is also an answer
+grep -rn "<pkgname>" skills/                 # skills must not name the exercise package
 ```
 
-Also move any directory on the target holding a finished copy of the same patch.
+Also move any directory on the target holding a finished copy of the same patch, and
+remember `RUNBOOK.md` itself names the skill a correct run updates.
 
 ### 4. Confirm the starting state is genuinely broken
 

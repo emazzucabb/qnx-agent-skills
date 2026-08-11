@@ -30,16 +30,35 @@ Most ports land in "Build systems on QNX" below — autotools (the `x86pc` build
 
 ### Phase 1: Dependency analysis
 1. Identify all project dependencies from APKBUILD
-2. Check which dependencies are already available on QNX
+2. Check which dependencies are already available on QNX — **search by stem, not by Alpine's exact package name**
 3. Port missing dependencies first (bottom-up approach)
 4. Document any QNX-specific patches needed for each dependency
+
+**A dependency is not missing just because Alpine's name misses.** The QNX tree renames
+packages, so `apk info -e <alpine-name>` returning nothing proves only that *that string*
+is not a package. Search the stem and read the results before concluding anything:
+
+```sh
+apk search -q <stem> | sort -u     # Alpine's name may be versioned/suffixed differently here
+apk info -W /usr/bin/<the-tool>    # which package actually owns the binary you need
+```
+
+Getting this wrong is expensive in both directions: you either port a dependency that
+already exists under another name, or you drop a feature and write a comment claiming the
+package is unavailable when it is not.
+
+**Then ask what the dependency is actually for before adding it.** Alpine aports carry
+dependencies for historical reasons, and the thing your build actually needs is often a
+single binary that ships in its own standalone package. `apk info -W` on the specific file
+the build looks for answers this directly, where the package name alone does not. An
+available-but-unused dependency is still a no-op the review-reduction pass will remove.
 
 ### Phase 2: Header conflicts resolution
 **Common Issue**: QNX's stdlib.h macros conflict with library method names
 
 **Solution Pattern**:
 ```c
-// Create header shim (e.g., for libgee conflicts)
+// Create header shim, placed before the includes that conflict
 #ifdef __QNX__
 #undef min
 #undef max
@@ -93,9 +112,35 @@ Most ports land in "Build systems on QNX" below — autotools (the `x86pc` build
 
 ### Phase 4: APKBUILD integration
 
+**Maintainer headers: two lines, always, on every aport derived from Alpine.** An Alpine
+APKBUILD opens with a single `# Maintainer:` line naming the Alpine maintainer. The QNX
+tree keeps that attribution but renames it, and adds the QNX maintainer below:
+
+```bash
+# Alpine-Maintainer: <the name already on the Alpine aport>
+# Maintainer: <the QNX maintainer, Name <email>>
+```
+
+Do not simply leave Alpine's header untouched — that leaves the aport claiming an upstream
+maintainer for a package they do not maintain here, and it is inconsistent with every other
+aport in the tree. Do not drop the Alpine name either; the provenance is wanted. Check the
+convention against a neighbouring aport rather than assuming, since it is a house rule
+rather than an Alpine one:
+
+```sh
+head -3 <tree>/extra/*/APKBUILD | grep -i maintainer | sort | uniq -c | sort -rn | head
+```
+
+For the QNX maintainer identity, use `PACKAGER` from `~/.abuild/abuild.conf` if it is set.
+It frequently is not (the file often carries only `PACKAGER_PRIVKEY`, the signing key).
+When there is no packager identity configured, do not invent one and do not guess a domain
+from a git log — ask, and say plainly in the report that the identity is unset.
+
 **Structure Pattern**:
 ```bash
 # APKBUILD template for QNX port
+# Alpine-Maintainer: <from the Alpine aport>
+# Maintainer: <you>
 pkgname=library-name
 pkgver=version
 pkgrel=0
@@ -142,15 +187,53 @@ Two QNX issues show up on almost every autotools port, and neither needs a sourc
 **1. The build triple (`config.sub` rejects `x86pc`).** QNX `uname -m` returns `x86pc`, so `config.guess` emits `unknown-x86pc-nto-qnx8.0.0`, and `config.sub` rejects the `x86pc` CPU token (`machine 'unknown-x86pc' not recognized`). The bundled config.sub already knows `nto-qnx`; only the CPU token is the problem. This is not a stale config.sub and is not fixed by refreshing gnuconfig (the image has none). The fix is to pass a valid build triple to configure so it skips `config.guess`:
 
 ```sh
-./configure --build=x86_64-pc-nto-qnx8.0.0 ...
+./configure --build=$CBUILD --host=$CHOST ...
 ```
 
-Note `$CHOST`/`$CBUILD` are empty in this image's abuild.conf, so there is no global triple to inherit; you pass it per package.
+**Use `$CBUILD`/`$CHOST`, not a hardcoded triple.** These are *not* set in `abuild.conf`,
+which makes them look unset, but abuild resolves them itself: sourcing
+`/usr/share/abuild/functions.sh` yields `CBUILD=[x86_64-pc-nto-qnx8.0.0]` and
+`CHOST=[x86_64-pc-nto-qnx8.0.0]` on the x86_64 image, and configure then reports
+`checking build system type... x86_64-pc-nto-qnx`. Writing the literal
+`--build=x86_64-pc-nto-qnx8.0.0` also works on x86_64, but it is wrong for any package
+declaring `arch="all"` because it hardcodes the wrong triple on aarch64. Note the trap
+that produced this correction: these variables are genuinely absent from `abuild.conf`,
+which makes "they are unset" look true, but that says nothing about the shell abuild
+actually runs `build()` in. Verify with:
 
-**2. libtool and `-fPIC` for shared libraries.** libtool does not inject a PIC flag for the QNX host, so a shared-library link fails with `relocation R_X86_64_PC32 ... can not be used when making a shared object; recompile with -fPIC`. Add `-fPIC` to CFLAGS:
+```sh
+sh -c '. /usr/share/abuild/functions.sh; echo "CBUILD=[$CBUILD] CHOST=[$CHOST]"'
+```
+
+Inside `build()` abuild has already set them, so the APKBUILD just uses them. A plain SSH
+shell has not, so the same configure line pasted into `src/` during manual iteration
+expands to `--build= --host=` and falls back into the `config.sub` failure above — see
+`aports-patch-creation`, Phase 1, for that trap.
+
+**2. libtool and `-fPIC` for shared libraries — package-dependent, so confirm before adding.**
+Some autotools projects hit a shared-library link failure on QNX because libtool does not
+inject a PIC flag:
+
+```
+relocation R_X86_64_PC32 ... can not be used when making a shared object; recompile with -fPIC
+```
+
+When that error actually appears, the fix is to add `-fPIC` to CFLAGS:
 
 ```sh
 export CFLAGS="$CFLAGS -fPIC -Qunused-arguments"
+```
+
+**Do not add it pre-emptively.** This was previously written here as a near-universal QNX
+autotools wall, and it is not — plenty of autotools projects link their shared library
+cleanly on QNX with no `-fPIC` at all. Adding a flag that no observed failure requires is
+exactly what the `qnx-apk-packaging` review-reduction pass exists to strip, and a reviewer
+cannot tell a load-bearing flag from cargo. Let the link fail first, then add it. Check
+whether it is doing anything:
+
+```sh
+# remove the flag, rebuild, and see whether the link still succeeds
+abuild clean && abuild -K unpack prepare && abuild -K build
 ```
 
 (`-Qunused-arguments` is the repo-wide convention for the clang unused-argument warnings from the default hardening flags; see the repo-conventions section.)
@@ -239,9 +322,9 @@ ninja -C output -v
 
 These are established conventions of the aports repo; following them keeps a port consistent and review-clean:
 
-- **`somask`**: when a package installs libraries to a private directory rather than `/usr/lib`, use `somask` to suppress the public soname provides. Precedent: the neovim aport. No comment needed; it is an established pattern.
+- **`somask`**: when a package installs libraries to a private directory rather than `/usr/lib`, use `somask` to suppress the public soname provides. No comment needed; it is an established pattern with precedent in the tree.
 - **LTO is disabled repo-wide.** No comment is needed on LTO flags; it is convention (and aids QNX build stability).
-- **`-Qunused-arguments`** is used across the repo without comments. Follow suit; do not annotate it. Recognize when it is needed: the QNX `cc` is clang, and the default hardening `CFLAGS` include flags clang considers unused for some compiles (for example `-fstack-clash-protection`). Under `-Werror` that becomes `error: argument unused during compilation: '...' [-Werror,-Wunused-command-line-argument]` and every object fails to compile. The fix is `export CFLAGS="$CFLAGS -Qunused-arguments"` (add `CXXFLAGS`/`CPPFLAGS` likewise for C++/preprocessed builds) at the top of `build()`. Confirmed on the json-c port (2026-06-18); precedents include aspell and bullet.
+- **`-Qunused-arguments`** is used across the repo without comments. Follow suit; do not annotate it. Recognize when it is needed: the QNX `cc` is clang, and the default hardening `CFLAGS` include flags clang considers unused for some compiles (for example `-fstack-clash-protection`). Under `-Werror` that becomes `error: argument unused during compilation: '...' [-Werror,-Wunused-command-line-argument]` and every object fails to compile. The fix is `export CFLAGS="$CFLAGS -Qunused-arguments"` (add `CXXFLAGS`/`CPPFLAGS` likewise for C++/preprocessed builds) at the top of `build()`. There is ample precedent for it in the tree.
 
 Do not comment repo-wide conventions like LTO or `-Qunused-arguments`. Reserve comments for package-specific QNX deviations (see qnx-apk-packaging step 3).
 

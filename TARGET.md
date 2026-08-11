@@ -50,11 +50,12 @@ printf '%s\n' <password> | sudo -S <command>
 
 ## On-target paths
 
-- Authoritative aports tree: `<FILL IN THE PATH TO YOUR AUTHORITATIVE TREE>`
+- Authoritative aports tree: `/var/home/qnx/aports`
   An image often carries several `aports*` trees (scratch copies, old experiments).
-  Only one is authoritative: the clean tree whose git remote points at your aports
-  fork. Identify it once with the discovery sweep below and record it here, so no
-  session has to guess. Use this one path for all PR-bound work.
+  Only one is authoritative; use this one path for all PR-bound work and do not read
+  from the others. **This is a path, not a credential — keep it filled in.** Leaving it
+  blank costs every session a round-trip with the operator, and the discovery sweep
+  below cannot resolve the ambiguity on its own (see the warning there).
 - Package output: `/var/home/qnx/packages/<repo>/<arch>` (for example `extra/x86_64`)
 - Local repo resolution: add local package output paths before remote repos in
   `/etc/apk/repositories`, then `sudo apk update` (see the `qnx-apk-packaging` skill).
@@ -73,7 +74,12 @@ for d in /var/home/qnx/aports*; do
 done
 ```
 
-Record the tree with the SSH remote pointing at your fork as the authoritative one above.
+**The sweep produces candidates, not an answer.** "The tree whose remote is your fork" is
+not discriminating in practice: on this image all four `aports*` trees share the same fork
+as their remote and differ only by branch, so the heuristic selects everything. Treat the
+sweep as a way to enumerate what exists, then have the operator name the authoritative one
+**once**, and record it above so no later session has to ask again. If the path above is
+already filled in, trust it and do not re-run this sweep to second-guess it.
 
 ## The on-target loop
 
@@ -164,4 +170,71 @@ Record anything specific to your image that bit you once, so it is not rediscove
   today, but some builds refuse to run at all on bad sudoers permissions, and a
   group-writable drop-in is a local privilege concern. Fix once `visudo -c` otherwise
   passes: `sudo chmod 440 /etc/sudoers /etc/sudoers.d/00-qnx`.
+- **The target clock drifts behind and silently breaks every HTTPS fetch** (confirmed
+  2026-08-06). The QEMU guest clock does not track the host across suspend/resume: it read
+  six days behind (`Jul 31` against a host `Aug 6`). Certificates issued inside that window
+  have a `notBefore` in the target's future, so TLS is correctly rejected and every fetch
+  dies before transferring a byte:
+
+  ```
+  curl: (60) SSL certificate problem: certificate is not yet valid or the system clock is incorrect
+  ```
+
+  This blocks `abuild` itself, not just manual `curl` - abuild pulls source tarballs over
+  HTTPS, so a port cannot even start. The error names the clock, but it reads like a CA or
+  network problem and is easy to chase in the wrong direction. Check it first on any fresh
+  session, and note the clock can be *behind* even when `date` looks superficially sane:
+
+  ```sh
+  # on the host - a difference of more than a few minutes will break TLS
+  diff <(date -u) <(sshpass -e ssh -p 2227 ... qnx@localhost 'date -u')
+  ```
+
+  Fix by setting it forward from the host's UTC time (forward-only, so no build-timestamp
+  hazard):
+
+  ```sh
+  NOW=$(date -u +%m%d%H%M%Y.%S)
+  printf '%s\n' <password> | sudo -S date -u $NOW
+  ```
+
+  There is no NTP client running on this image, so it will drift again.
+- **The passwordless-apk drop-in grants `apk` and nothing else** (confirmed 2026-08-06).
+  `sudo -n apk ...` works, but any other elevated command still needs the password route
+  (`printf '%s\n' <password> | sudo -S ...`) - `sudo -n date` returns
+  `sudo: a password is required`. That is the rule working as intended, not a broken
+  sudoers file. Also note `/etc/sudoers.d/` is not readable by `qnx`, so the drop-in cannot
+  be inspected directly; prove elevation functionally with
+  `sudo -n apk add --simulate <installed-pkg>` instead.
+- **Empty runtime packages are not unique to `libssh2` above.** Several packages on this
+  image are installed, report a version, and ship no files at all, so a dependency can look
+  satisfied while the library is absent from the filesystem. Check any runtime dependency
+  you are about to rely on rather than trusting the install state:
+
+  ```sh
+  apk info -L <pkg>            # no file list = empty package
+  ls /usr/lib/lib<name>.so*    # confirm the library actually exists
+  ```
+- **`apk info -e <pkg>` prints nothing on this image, installed or not** (apk-tools
+  `3.0.0_rc5`, confirmed 2026-08-10). Any grep- or output-based test therefore reports
+  *every* package as missing, which reads as a broken dependency and is not. Only the exit
+  status carries the answer:
+
+  ```sh
+  apk info -e busybox   >/dev/null 2>&1; echo $?   # 0 = installed
+  apk info -e nosuchpkg >/dev/null 2>&1; echo $?   # 1 = not installed
+  apk list -I | grep '^<pkg>-'                     # use this when you want to see it
+  ```
+- **Where passwordless apk actually lives varies, so check before adding a drop-in**
+  (confirmed 2026-08-10). On this image `/etc/sudoers.d/` is **empty** — there is no
+  `00-qnx` — and the NOPASSWD rule is in `/etc/sudoers` itself. Following the drop-in
+  recipe blindly adds a redundant rule. One command tells you what is really in force:
+
+  ```sh
+  sudo -n -l          # expect a line like: (ALL) NOPASSWD: /usr/bin/apk
+  ```
+- **The sudoers-permissions remediation above is operator work, not agent work.**
+  Passwordless sudo covers `/usr/bin/apk` **only**, so `sudo visudo -c`, `sudo chmod` and
+  even reading `/etc/sudoers` all fail with `sudo: a password is required`. An agent cannot
+  verify or fix it; do not spend commands trying. Report it and move on.
 - Any repaired system files: none so far on this image.
